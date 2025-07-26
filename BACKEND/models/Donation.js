@@ -23,6 +23,7 @@ const DonationSchema = new mongoose.Schema({
   createdAt: String,
   displayTime: String,
   updatedAt: String,
+  visibleAfter: String,
   requests: [RequestSchema],
 });
 

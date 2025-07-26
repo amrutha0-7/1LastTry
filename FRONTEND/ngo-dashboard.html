@@ -772,6 +772,28 @@
             }
             let userLocation = loadAndDisplayLocation();
 
+            // Load donations and stats
+            loadDonations('all');
+            loadMyRequests();
+            loadStats();
+
+            // Set up real-time updates (check every 10 seconds)
+            setInterval(() => {
+                userLocation = loadAndDisplayLocation();
+                loadDonations('all');
+                loadMyRequests();
+                loadStats();
+            }, 10000);
+
+            // Filter buttons
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    loadDonations(this.getAttribute('data-filter'));
+                });
+            });
+
             // Tab switching
             document.getElementById('availableTab').addEventListener('click', function() {
                 document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
@@ -812,7 +834,7 @@
 
             // Helper: Fetch all donations
             async function fetchAllDonations() {
-                const res = await fetch(`${API_BASE}/api/donations`);
+                const res = await fetch(`${API_BASE}/api/donations?role=ngo&user=${currentUser.username}`);
                 return await res.json();
             }
 
@@ -832,31 +854,24 @@
                 const donations = await fetchAllDonations();
                 const now = new Date();
                 
-                // Get donations that are available for NGO
+                // Get donations that are available for NGO (backend already filters timing)
                 let availableDonations = donations.filter(donation => {
-                    const bestBefore = new Date(donation.bestBefore);
-                    const visibleAfter = donation.visibleAfter ? new Date(donation.visibleAfter) : new Date(new Date(donation.createdAt).getTime() + 120000);
-                    
-                    // Check if already requested by this NGO
-                    const alreadyRequested = donation.requests && donation.requests.some(r => 
-                        r.receiver === currentUser.username && r.isNGO
-                    );
-                    
+                    // Apply food type filters
                     const foodTypeLower = donation.foodType.trim().toLowerCase();
                     const isVegetarian = foodTypeLower === 'vegetarian' || foodTypeLower.startsWith('vegetarian ');
                     const isNonVegetarian = foodTypeLower === 'non-vegetarian' || foodTypeLower.startsWith('non-vegetarian ');
                     if (filter === 'vegetarian' && !isVegetarian) return false;
                     if (filter === 'non-vegetarian' && !isNonVegetarian) return false;
-                    return donation.status === 'available' && 
-                           !alreadyRequested &&
-                           now <= bestBefore &&
-                           now >= visibleAfter;
+                    return true; // Backend already filtered timing and availability
                 });
                 
-                // Get donations that are coming soon
-                const comingSoonDonations = donations.filter(donation => {
+                // Get donations that are coming soon (not yet visible to NGOs)
+                const allDonations = await fetch(`${API_BASE}/api/donations?role=all&user=${currentUser.username}`);
+                const comingSoonDonations = allDonations.filter(donation => {
                     const bestBefore = new Date(donation.bestBefore);
-                    const visibleAfter = donation.visibleAfter ? new Date(donation.visibleAfter) : new Date(new Date(donation.createdAt).getTime() + 120000);
+                    const visibleAfter = donation.visibleAfter ? 
+                        new Date(donation.visibleAfter) : 
+                        new Date(new Date(donation.createdAt).getTime() + 120000);
                     
                     const alreadyRequested = donation.requests && donation.requests.some(r => 
                         r.receiver === currentUser.username && r.isNGO
@@ -949,7 +964,9 @@
                 
                 // Then show coming soon donations
                 comingSoonDonations.forEach(donation => {
-                    const visibleAfter = donation.visibleAfter ? new Date(donation.visibleAfter) : new Date(new Date(donation.createdAt).getTime() + 120000);
+                    const visibleAfter = donation.visibleAfter ? 
+                        new Date(donation.visibleAfter) : 
+                        new Date(new Date(donation.createdAt).getTime() + 120000);
                     const timeUntilAvailable = Math.ceil((visibleAfter - now) / 60000);
                     
                     const donationElement = document.createElement('div');
@@ -1272,19 +1289,8 @@
                 const donations = await fetchAllDonations();
                 const now = new Date();
                 
-                const availableDonations = donations.filter(donation => {
-                    const bestBefore = new Date(donation.bestBefore);
-                    const visibleAfter = donation.visibleAfter ? new Date(donation.visibleAfter) : new Date(new Date(donation.createdAt).getTime() + 120000);
-                    
-                    const alreadyRequested = donation.requests && donation.requests.some(r => 
-                        r.receiver === currentUser.username && r.isNGO
-                    );
-                    
-                    return donation.status === 'available' && 
-                           !alreadyRequested &&
-                           now <= bestBefore &&
-                           now >= visibleAfter;
-                }).length;
+                // Available donations for NGO (backend already filters timing)
+                const availableDonations = donations.length;
                 
                 const yourRequests = donations.filter(d => 
                     d.requests && 

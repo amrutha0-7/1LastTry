@@ -1162,8 +1162,52 @@
                 })
             }).addTo(map).bindPopup('<b>Collection Vehicle</b><br>Starting from Collection Center');
         }
+
+        // Draw route between donor and receiver
+        function drawRoute(donorCoords, receiverCoords) {
+            if (!donorCoords || !receiverCoords) return;
+            
+            // Remove existing route if any
+            if (route) {
+                map.removeLayer(route);
+            }
+            
+            // Draw dotted line between donor and receiver
+            route = L.polyline([receiverCoords, donorCoords], {
+                color: '#10B981',
+                weight: 4,
+                dashArray: '10, 10',
+                lineCap: 'round',
+                opacity: 0.8
+            }).addTo(map);
+            
+            // Fit map to show both locations
+            map.fitBounds([receiverCoords, donorCoords], { 
+                padding: [50, 50],
+                maxZoom: 15
+            });
+        }
+
+        // Update locations on map
+        function updateLocationsOnMap(donorCoords, donorLocationName) {
+            if (!donorCoords) return;
+            
+            // Add donor marker
+            const donorMarker = L.marker(donorCoords, {
+                icon: L.divIcon({
+                    className: 'donor-icon',
+                    html: '<div style="background: linear-gradient(135deg, #EF4444, #F87171); color: white; border-radius: 12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);"><i class="fas fa-home"></i></div>',
+                    iconSize: [40, 40]
+                })
+            }).addTo(map).bindPopup(`<b>Donor Location</b><br>${donorLocationName || 'Donor Address'}`);
+            
+            // Draw route if we have receiver coordinates
+            if (receiverCoords) {
+                drawRoute(donorCoords, receiverCoords);
+            }
+        }
         
-        // Replace localStorage donation and receiver fetch with backend API call
+        // Load active donation from backend API
         async function loadActiveDonation() {
             const urlParams = new URLSearchParams(window.location.search);
             const donationId = urlParams.get('donation');
@@ -1171,72 +1215,83 @@
                 console.log("No active donation specified");
                 return;
             }
-            // Get donation from localStorage
-            const donations = JSON.parse(localStorage.getItem('foodDonations')) || [];
-            const activeDonation = donations.find(d => d.id === donationId);
-            if (!activeDonation) {
-                alert('Donation not found!');
-                return;
-            }
-            let receiver = null;
-            let receiverName = 'Receiver';
-            let receiverAddress = 'Address not specified';
-            let receiverPhone = '+91 XXXXX XXXXX';
-            if (activeDonation.receiver) {
-                receiverUsername = activeDonation.receiver;
-            } else if (activeDonation.requests && activeDonation.requests.length > 0) {
-                receiverUsername = activeDonation.requests[0].receiver;
-            }
-            if (receiverUsername) {
-                receiver = JSON.parse(localStorage.getItem(`userLocation_${receiverUsername}`));
-                // Try to get receiver user info for name
-                const receiverUser = JSON.parse(localStorage.getItem('donationUsers'))?.find(u => u.username === receiverUsername);
-                receiverName = receiverUser?.organization || receiverUser?.username || 'Receiver';
-                receiverAddress = receiver?.display_name || receiver?.address || 'Address not specified';
-            }
-            // Fallback receiver object
-            if (!receiver) {
-                receiver = {
-                    username: 'receiver',
-                    organization: receiverName,
-                    phone: receiverPhone,
-                    location: { display_name: receiverAddress }
-                };
-            }
-            receiverCoords = receiver?.lat && receiver?.lon
-                ? [parseFloat(receiver.lat), parseFloat(receiver.lon)]
-                : [16.5435, 81.5252];
-            donorCoords = activeDonation.location?.lat && activeDonation.location?.lon
-                ? [parseFloat(activeDonation.location.lat), parseFloat(activeDonation.location.lon)]
-                : null;
-            updateDonationInfo(activeDonation, receiver, receiverName, receiverAddress, receiverPhone);
-            if (donorCoords) {
-                updateLocationsOnMap(donorCoords, activeDonation.location?.display_name);
-            }
-            if (receiverUsername) {
-                setInterval(async () => {
-                    try {
-                        const res = await fetch(`http://localhost:5000/api/location/${receiverUsername}`);
-                        if (!res.ok) return;
-                        const data = await res.json();
-                        if (data.lat && data.lon && (data.lat != lastReceiverLat || data.lon != lastReceiverLon)) {
-                            lastReceiverLat = data.lat;
-                            lastReceiverLon = data.lon;
-                            receiverCoords = [parseFloat(data.lat), parseFloat(data.lon)];
-                            receiverMarker.setLatLng(receiverCoords);
-                            if (donorCoords) {
-                                if (route) map.removeLayer(route);
-                                route = L.polyline([receiverCoords, donorCoords], {
-                                    color: '#10B981',
-                                    weight: 4,
-                                    dashArray: '10, 10',
-                                    lineCap: 'round'
-                                }).addTo(map);
-                                map.fitBounds([receiverCoords, donorCoords], { padding: [50, 50] });
+            
+            try {
+                // Get donation from backend API
+                const res = await fetch(`http://localhost:5000/api/donations/${donationId}`);
+                if (!res.ok) {
+                    alert('Donation not found!');
+                    return;
+                }
+                const activeDonation = await res.json();
+                
+                let receiver = null;
+                let receiverName = 'Receiver';
+                let receiverAddress = 'Address not specified';
+                let receiverPhone = '+91 XXXXX XXXXX';
+                let receiverUsername = null;
+                
+                if (activeDonation.requests && activeDonation.requests.length > 0) {
+                    const request = activeDonation.requests[0];
+                    receiverUsername = request.receiver;
+                    receiverName = request.organization || request.receiver;
+                    receiverAddress = request.receiverLocation?.display_name || 'Address not specified';
+                    receiver = request.receiverLocation;
+                }
+                
+                // Fallback receiver object
+                if (!receiver) {
+                    receiver = {
+                        username: 'receiver',
+                        organization: receiverName,
+                        phone: receiverPhone,
+                        location: { display_name: receiverAddress }
+                    };
+                }
+                
+                receiverCoords = receiver?.lat && receiver?.lon
+                    ? [parseFloat(receiver.lat), parseFloat(receiver.lon)]
+                    : [16.5435, 81.5252];
+                    
+                donorCoords = activeDonation.location?.lat && activeDonation.location?.lon
+                    ? [parseFloat(activeDonation.location.lat), parseFloat(activeDonation.location.lon)]
+                    : null;
+                    
+                updateDonationInfo(activeDonation, receiver, receiverName, receiverAddress, receiverPhone);
+                
+                if (donorCoords) {
+                    updateLocationsOnMap(donorCoords, activeDonation.location?.display_name);
+                }
+                
+                // Draw initial route if we have both coordinates
+                if (donorCoords && receiverCoords) {
+                    drawRoute(donorCoords, receiverCoords);
+                }
+                
+                // Set up real-time location updates for receiver
+                if (receiverUsername) {
+                    setInterval(async () => {
+                        try {
+                            const res = await fetch(`http://localhost:5000/api/location/${receiverUsername}`);
+                            if (!res.ok) return;
+                            const data = await res.json();
+                            if (data.lat && data.lon && (data.lat != lastReceiverLat || data.lon != lastReceiverLon)) {
+                                lastReceiverLat = data.lat;
+                                lastReceiverLon = data.lon;
+                                receiverCoords = [parseFloat(data.lat), parseFloat(data.lon)];
+                                receiverMarker.setLatLng(receiverCoords);
+                                if (donorCoords) {
+                                    drawRoute(donorCoords, receiverCoords);
+                                }
                             }
+                        } catch (e) {
+                            console.error('Error updating receiver location:', e);
                         }
-                    } catch (e) {}
-                }, 5000);
+                    }, 5000);
+                }
+            } catch (error) {
+                console.error('Error loading donation:', error);
+                alert('Error loading donation details!');
             }
         }
         

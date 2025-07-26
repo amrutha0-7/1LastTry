@@ -733,10 +733,16 @@
             document.getElementById('userAvatar').textContent = currentUser.username.charAt(0).toUpperCase();
 
             // Load user location
-            const userLocation = JSON.parse(localStorage.getItem(`userLocation_${currentUser.username}`));
-            if (userLocation) {
-                document.getElementById('currentLocation').textContent = userLocation.display_name || 'Your location';
+            function loadAndDisplayLocation() {
+                const userLocation = JSON.parse(localStorage.getItem(`userLocation_${currentUser.username}`));
+                if (userLocation) {
+                    document.getElementById('currentLocation').textContent = userLocation.display_name || 'Your location';
+                } else {
+                    document.getElementById('currentLocation').textContent = 'Location not set';
+                }
+                return userLocation;
             }
+            let userLocation = loadAndDisplayLocation();
 
             // Change location button
             document.getElementById('changeLocationBtn').addEventListener('click', function() {
@@ -769,7 +775,7 @@
 
             // Helper: Fetch all donations
             async function fetchAllDonations() {
-                const res = await fetch(`${API_BASE}/api/donations`);
+                const res = await fetch(`${API_BASE}/api/donations?role=receiver&user=${currentUser.username}`);
                 return await res.json();
             }
 
@@ -1066,6 +1072,11 @@
                 document.getElementById('availableDonations').textContent = availableDonations;
                 document.getElementById('yourRequests').textContent = userRequests;
             }
+
+            // Load donations and stats
+            loadDonations('all');
+            loadMyRequests();
+            loadStats();
 
             // Filter buttons
             document.querySelectorAll('.filter-btn').forEach(btn => {
