@@ -892,231 +892,72 @@
             loadDonations();
             loadStats();
 
-            // Donation form submission
-            document.getElementById('donationForm').addEventListener('submit', function(e) {
-                e.preventDefault();
-                
-                // Get user's current location
-                const userLocation = JSON.parse(localStorage.getItem(`userLocation_${currentUser.username}`));
-                
-                // Validate location
-                if (!userLocation || (!userLocation.lat && !userLocation.display_name)) {
-                    alert('Please set your location before donating. Click "Change Location" in the location section above.');
-                    return;
-                }
-                
-                const foodType = document.getElementById('foodType').value;
-                const quantity = document.getElementById('quantity').value;
-                const foodDescription = document.getElementById('foodDescription').value;
-                const bestBefore = document.getElementById('bestBefore').value;
-                const preferredPickup = document.getElementById('preferredPickup').value;
-                const specialInstructions = document.getElementById('specialInstructions').value;
-                
-                // Validate required fields
-                if (!foodType || !quantity || !foodDescription || !bestBefore) {
-                    alert('Please fill in all required fields.');
-                    return;
-                }
-                
-                // Get current timestamp
-                const now = new Date();
-                const createdAt = now.toISOString();
-                const displayTime = now.toLocaleString();
+            // Helper: API base URL
+            const API_BASE = 'http://localhost:5000';
 
-                const newDonation = {
-                    id: Date.now().toString(),
-                    donor: (currentUser && currentUser.username) ? currentUser.username : 'Unknown',
-                    foodType,
-                    quantity,
-                    foodDescription,
-                    bestBefore,
-                    preferredPickup,
-                    specialInstructions,
-                    location: userLocation, // Using donor's current location
-                    status: 'available',
-                    createdAt,
-                    displayTime,
-                    requests: []
-                };
-
-                const donations = JSON.parse(localStorage.getItem('foodDonations'));
-                donations.push(newDonation);
-                localStorage.setItem('foodDonations', JSON.stringify(donations));
-
-                // Reset form
-                this.reset();
-                
-                // Hide form
-                document.getElementById('donationFormContainer').style.display = 'none';
-                
-                // Show success message
-                alert('Donation shared successfully!');
-                
-                // Reload donations and stats
-                loadDonations();
-                loadStats();
-            });
-
-            function loadDonations() {
-                const donations = JSON.parse(localStorage.getItem('foodDonations')) || [];
-                const now = new Date();
-                
-                // Process donations - mark expired ones
-                const processedDonations = donations.map(donation => {
-                    if (donation.bestBefore) {
-                        const bestBefore = new Date(donation.bestBefore);
-                        if (now > bestBefore && donation.status !== 'claimed' && donation.status !== 'expired') {
-                            donation.status = 'expired';
-                        }
-                    }
-                    return donation;
-                });
-                
-                // Save back if any changes
-                localStorage.setItem('foodDonations', JSON.stringify(processedDonations));
-                
-                // Filter donations to show
-                const userDonations = processedDonations.filter(d => 
-                    d.donor === currentUser.username && 
-                    d.status !== 'claimed' && 
-                    d.status !== 'expired'
-                );
-                
-                const container = document.getElementById('donationsContainer');
-                
-                if (userDonations.length === 0) {
-                    container.innerHTML = `
-                        <div class="no-donations">
-                            <i class="fas fa-utensils"></i>
-                            <p>You haven't shared any active donations yet.</p>
-                            <p>Click the "Donate Now" button above to get started!</p>
-                        </div>
-                    `;
-                    return;
-                }
-
-                // Sort by creation time (newest first)
-                userDonations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-                container.innerHTML = '';
-                userDonations.forEach(donation => {
-                    let statusClass = 'status-available';
-                    let statusText = 'Available';
-                    if (donation.status === 'requested') {
-                        statusClass = 'status-requested';
-                        statusText = 'Requested';
-                    } else if (donation.status === 'accepted') {
-                        statusClass = 'status-accepted';
-                        statusText = 'Accepted';
-                    } else if (donation.status === 'claimed') {
-                        statusClass = 'status-claimed';
-                        statusText = 'Claimed';
-                    } else if (donation.status === 'expired') {
-                        statusClass = 'status-expired';
-                        statusText = 'Expired';
-                    }
-                    
-                    // Format location display
-                    const locationDisplay = donation.location?.display_name || 
-                                          (donation.location?.lat ? 'Location set (see map)' : 'Location not specified');
-                    
-                    const donationElement = document.createElement('div');
-                    donationElement.className = 'donation-item';
-                    donationElement.innerHTML = `
-                        <div class="donation-details">
-                            <h3>${donation.foodType} (${donation.quantity})</h3>
-                            <div class="donation-meta">
-                                <span><i class="far fa-clock"></i> ${donation.displayTime || new Date(donation.createdAt).toLocaleString()}</span>
-                                <span><i class="fas fa-map-marker-alt"></i> ${locationDisplay}</span>
-                            </div>
-                            <div class="donation-status ${statusClass}">
-                                ${statusText}
-                            </div>
-                            <p>${donation.foodDescription || 'No description provided'}</p>
-                        </div>
-                        <div class="donation-actions">
-                            ${(donation.status === 'accepted') ? `
-                                <button class="btn btn-primary track-donation-btn" data-id="${donation.id}">
-                                    <i class="fas fa-map-marked-alt"></i> Track Location
-                                </button>
-                            ` : `
-                                <button class="btn btn-sm btn-outline delete-donation-btn" data-id="${donation.id}">
-                                    <i class="fas fa-trash"></i> Delete
-                                </button>
-                            `}
-                        </div>
-                        ${donation.requests.length > 0 && (donation.status === 'requested' || donation.status === 'accepted') ? `
-                            <div class="request-details">
-                                <h4>Request from: ${donation.requests[0].organization || donation.requests[0].receiver}</h4>
-                                <p>${donation.requests[0].message || 'No message provided'}</p>
-                                <div class="receiver-location">
-                                    <i class="fas fa-map-marker-alt"></i>
-                                    ${donation.requests[0].receiverLocation?.display_name || 'Location not specified'}
-                                </div>
-                                ${donation.status === 'requested' ? `
-                                    <div class="request-actions">
-                                        <button class="btn btn-primary accept-request-btn" data-id="${donation.id}">
-                                            <i class="fas fa-check"></i> Accept
-                                        </button>
-                                        <button class="btn btn-outline decline-request-btn" data-id="${donation.id}">
-                                            <i class="fas fa-times"></i> Decline
-                                        </button>
-                                    </div>
-                                ` : ''}
-                            </div>
-                        ` : ''}
-                    `;
-                    container.appendChild(donationElement);
-                });
-
-                // Add event listeners for delete buttons
-                document.querySelectorAll('.delete-donation-btn').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        if (confirm('Are you sure you want to delete this donation?')) {
-                            const donationId = this.getAttribute('data-id');
-                            const donations = JSON.parse(localStorage.getItem('foodDonations'));
-                            const updatedDonations = donations.filter(d => d.id !== donationId);
-                            localStorage.setItem('foodDonations', JSON.stringify(updatedDonations));
-                            loadDonations();
-                            loadStats();
-                        }
-                    });
-                });
-
-                // Add event listeners for accept/decline buttons
-                document.querySelectorAll('.accept-request-btn').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const donationId = this.getAttribute('data-id');
-                        updateRequestStatus(donationId, 'accepted');
-                    });
-                });
-
-                document.querySelectorAll('.decline-request-btn').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const donationId = this.getAttribute('data-id');
-                        updateRequestStatus(donationId, 'declined');
-                    });
-                });
-
-                // Add event listeners for track buttons
-                document.querySelectorAll('.track-donation-btn').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const donationId = this.getAttribute('data-id');
-                        window.location.href = 'tracker.html?donation=' + donationId;
-                    });
-                });
+            // Helper: Fetch all donations for this donor
+            async function fetchUserDonations() {
+                const res = await fetch(`${API_BASE}/api/donations`);
+                const allDonations = await res.json();
+                return allDonations.filter(d => d.donor === currentUser.username);
             }
 
-            function loadHistory() {
-                const donations = JSON.parse(localStorage.getItem('foodDonations')) || [];
-                const userDonations = donations.filter(d => 
-                    d.donor === currentUser.username && 
-                    (d.status === 'claimed' || d.status === 'expired')
-                );
-                
+            // Helper: Create a new donation
+            async function createDonation(donation) {
+                const res = await fetch(`${API_BASE}/api/donations`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(donation)
+                });
+                return await res.json();
+            }
+
+            // Helper: Delete a donation
+            async function deleteDonation(donationId) {
+                await fetch(`${API_BASE}/api/donations/${donationId}`, { method: 'DELETE' });
+            }
+
+            // Helper: Update a donation
+            async function updateDonation(donationId, update) {
+                const res = await fetch(`${API_BASE}/api/donations/${donationId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(update)
+                });
+                return await res.json();
+            }
+
+            // Update request status (accept/decline)
+            async function updateRequestStatus(donationId, action) {
+                // Fetch the donation
+                const res = await fetch(`${API_BASE}/api/donations/${donationId}`);
+                const donation = await res.json();
+                if (!donation) return;
+                if (action === 'accepted') {
+                    donation.status = 'accepted';
+                    if (donation.requests && donation.requests.length > 0) {
+                        donation.requests[0].status = 'accepted';
+                        donation.receiverLocation = donation.requests[0].receiverLocation;
+                        donation.updatedAt = new Date().toISOString();
+                    }
+                    await updateDonation(donationId, donation);
+                    alert('Request accepted! The receiver will come to collect the food.');
+                    loadDonations();
+                } else {
+                    donation.status = 'available';
+                    donation.requests = [];
+                    await updateDonation(donationId, donation);
+                    alert('Request declined. The donation is now available again.');
+                    loadDonations();
+                }
+            }
+
+            // Load donation history from backend
+            async function loadHistory() {
+                const userDonations = await fetchUserDonations();
                 const container = document.getElementById('historyContainer');
-                
-                if (userDonations.length === 0) {
+                const historyDonations = userDonations.filter(d => d.status === 'claimed' || d.status === 'expired');
+                if (historyDonations.length === 0) {
                     container.innerHTML = `
                         <div class="no-donations">
                             <i class="fas fa-utensils"></i>
@@ -1125,20 +966,14 @@
                     `;
                     return;
                 }
-
-                // Sort by creation time (newest first)
-                userDonations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
+                historyDonations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                 container.innerHTML = '';
-                userDonations.forEach(donation => {
+                historyDonations.forEach(donation => {
                     const request = donation.requests && donation.requests.length > 0 ? donation.requests[0] : null;
-                    
                     const historyItem = document.createElement('div');
                     historyItem.className = 'history-item';
-                    
                     let statusText = donation.status === 'claimed' ? 'Claimed' : 'Expired';
                     let statusClass = donation.status === 'claimed' ? 'status-claimed' : 'status-expired';
-                    
                     historyItem.innerHTML = `
                         <h3>${donation.foodType} (${donation.quantity})</h3>
                         <div class="history-meta">
@@ -1155,48 +990,8 @@
                         ` : ''}
                         ${donation.status === 'expired' ? `<p><strong>Expired at:</strong> ${new Date(donation.bestBefore).toLocaleString()}</p>` : ''}
                     `;
-                    
                     container.appendChild(historyItem);
                 });
-            }
-
-            function updateRequestStatus(donationId, action) {
-                const donations = JSON.parse(localStorage.getItem('foodDonations'));
-                const donationIndex = donations.findIndex(d => d.id === donationId);
-                
-                if (donationIndex !== -1) {
-                    if (action === 'accepted') {
-                        // Change status to "accepted"
-                        donations[donationIndex].status = 'accepted';
-                        donations[donationIndex].requests[0].status = 'accepted';
-                        
-                        // Store both locations in the donation object
-                        const receiverLocation = donations[donationIndex].requests[0].receiverLocation;
-                        donations[donationIndex].receiverLocation = receiverLocation;
-                        
-                        // Update timestamp
-                        donations[donationIndex].updatedAt = new Date().toISOString();
-                        
-                        localStorage.setItem('foodDonations', JSON.stringify(donations));
-                        alert('Request accepted! The receiver will come to collect the food.');
-                        loadDonations();
-                    } else {
-                        // When declining, reset the donation to available and clear requests
-                        donations[donationIndex].status = 'available';
-                        donations[donationIndex].requests = [];
-                        localStorage.setItem('foodDonations', JSON.stringify(donations));
-                        
-                        // Also update NGO requests if this was an NGO request
-                        if (localStorage.getItem('ngoRequests')) {
-                            const ngoRequests = JSON.parse(localStorage.getItem('ngoRequests'));
-                            const updatedNgoRequests = ngoRequests.filter(r => r.donationId !== donationId);
-                            localStorage.setItem('ngoRequests', JSON.stringify(updatedNgoRequests));
-                        }
-                        
-                        alert('Request declined. The donation is now available again.');
-                        loadDonations();
-                    }
-                }
             }
 
             // Add cleanup function that runs periodically
